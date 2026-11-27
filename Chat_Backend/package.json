@@ -1,0 +1,26 @@
+{
+  "type": "module",
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mediasoup": "^3.19.2",
+    "mediasoup-client": "^3.16.2",
+    "mongoose": "^8.17.1",
+    "multer": "^2.0.2",
+    "mysql2": "^3.14.3",
+    "socket.io": "^4.8.1"
+  },
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "test:hidden-chat": "node --test tests/hiddenChatSecurity.test.js tests/hiddenChatAccessMiddleware.test.js tests/hiddenChatRoutes.test.js tests/liveLocationPayload.test.js tests/groupPinsRoutes.test.js tests/groupPollService.test.js tests/apiRoutesMounted.test.js",
+    "test:group-friends": "node --test tests/groupFriendshipRules.test.js",
+    "smoke:routes:qa": "node tests/apiRoutesRemoteSmoke.mjs",
+    "smoke:authenticated:qa": "node tests/apiAuthenticatedReadSmoke.mjs"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}

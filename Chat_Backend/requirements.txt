@@ -1,0 +1,9 @@
+# Toàn bộ thư viện được sử dụng
+dotenv
+express
+mongoose
+cors
+cookie-parser
+jsonwebtoken
+
+

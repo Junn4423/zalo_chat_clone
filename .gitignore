@@ -1,0 +1,50 @@
+﻿# Local captures, reverse-engineering output, and release artifacts
+/.task-scratch/
+/rea-*/
+/rea-mobile-current/
+/rea-screens/
+/zalo_ui_references/
+/chat_realease/
+/__MACOSX/
+/rea-zalo-inventory
+/MobileChat.zip
+/*.png
+/*.jpg
+/*.jpeg
+/*.json
+/*.xml
+
+# Generated dependencies and build output
+**/node_modules/
+**/build/
+**/dist/
+**/.gradle/
+**/.cxx/
+**/Pods/
+**/vendor/
+**/.bundle/
+
+# Local configuration and secrets
+**/.env
+**/.env.*
+!**/.env.example
+**/keystore.properties
+**/*.keystore
+**/*.jks
+**/*.p12
+**/*.mobileprovision
+**/local.properties
+
+# Runtime uploads and generated files
+Chat_Backend/Uploads/
+Chat_Backend/uploads/
+Chat_Backend/data/
+**/.DS_Store
+**/*.log
+*.apk
+*.aab
+
+# Local backup copies
+**/*.backup
+
+/MobileChat/REA_FEATURE_CHECKLIST.md

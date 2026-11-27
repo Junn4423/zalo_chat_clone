@@ -62,6 +62,10 @@ export default function SearchHeader({
       >
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setMenuVisible(false)}>
           <View style={{ position: 'absolute', top: 60, right: 20, backgroundColor: '#fff', borderRadius: 12, padding: 12, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, elevation: 8, minWidth: 180 }}>
+            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }} onPress={() => { setMenuVisible(false); onRightPress && onRightPress('qrcode'); }}>
+              <Icon name="qrcode" size={20} color="#2179ee" style={{ marginRight: 12 }} />
+              <Text style={{ fontSize: 16 }}>Quét mã QR</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }} onPress={() => { setMenuVisible(false); onRightPress && onRightPress('addFriend'); }}>
               <Icon name="user-plus" size={20} color="#2179ee" style={{ marginRight: 12 }} />
               <Text style={{ fontSize: 16 }}>Thêm bạn</Text>

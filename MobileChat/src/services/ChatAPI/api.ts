@@ -2,6 +2,7 @@ import { AxiosResponse } from "axios";
 import client from '../client';
 import constants from "../../contents/Api_URL";
 import { socket } from "../../utils/socket"; 
+import {createGroupInviteLink} from '../../utils/friendInvite';
 
 // Create a room
 export const LayTaoPhongChat = async (userId: string): Promise<AxiosResponse> => {
@@ -231,6 +232,16 @@ export const getGroupMembers = async (roomId: string) => {
 
 export const addGroupMembers = async (roomId: string, userIds: string[]) => {
   const response = await client.post(`${roomEndpoint}/${encodeURIComponent(roomId)}/members`, {userIds});
+  return response.data;
+};
+
+export const createGroupInvite = async (roomId: string) => {
+  const response = await client.post<{roomId: string; name: string; token: string; expiresAt: string}>(`${roomEndpoint}/${encodeURIComponent(roomId)}/invites`);
+  return {...response.data, link: createGroupInviteLink(response.data.token)};
+};
+
+export const joinGroupByInvite = async (token: string) => {
+  const response = await client.post<{roomId: string; name: string; groupImage: string | null; type: 'group'; joined: boolean}>(`${roomEndpoint}/join-by-invite`, {token});
   return response.data;
 };
 

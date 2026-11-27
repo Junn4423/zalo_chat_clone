@@ -29,6 +29,7 @@ const messageSchema = new mongoose.Schema({
   roomId: { type: mongoose.Schema.Types.ObjectId, ref: 'Room', required: true, index: true },
   userId: { type: String, ref: 'User', required: true },
   content: { type: String, default: "", maxlength: 2000 },
+  mentions: {type: [String], default: []},
   type: {
     type: String,
     enum: ['text', 'file', 'image', 'video', 'audio', 'call', 'sticker', 'location', 'gif', 'poll'],

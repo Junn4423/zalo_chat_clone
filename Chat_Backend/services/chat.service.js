@@ -25,7 +25,7 @@ export const createReplyPreview = async (roomId, replyToId) => {
   };
 };
 
-export const saveMessage = async ({ roomId, userId, content, type = 'text', fileMeta, location, poll, replyTo, forwardedFrom, clientMessageId }) => {
+export const saveMessage = async ({ roomId, userId, content, type = 'text', fileMeta, location, poll, mentions, replyTo, forwardedFrom, clientMessageId }) => {
   const context = getContext();
   return runWithContext(context, async () => {
     try {
@@ -44,6 +44,14 @@ export const saveMessage = async ({ roomId, userId, content, type = 'text', file
       const room = await Room.findOne({_id: roomId, participants: userId, deletedAt: null}).select('_id type participants').lean();
       if (!room) throw Object.assign(new Error('Không có quyền gửi tin nhắn vào phòng này'), {status: 403});
       await assertCanContactInRoom(room, userId, 'messages');
+
+      if (mentions !== undefined && (!Array.isArray(mentions) || mentions.length > 50 || mentions.some(id => typeof id !== 'string' || !id.trim()))) {
+        throw Object.assign(new Error('Danh sách được gắn thẻ không hợp lệ'), {status: 400});
+      }
+      const mentionIds = [...new Set((mentions || []).map(id => id.trim()))].filter(id => id !== String(userId));
+      if (mentionIds.length && type !== 'text') throw Object.assign(new Error('Chỉ có thể gắn thẻ trong tin nhắn văn bản'), {status: 400});
+      if (mentionIds.length && room.type !== 'group') throw Object.assign(new Error('Chỉ có thể gắn thẻ thành viên trong nhóm'), {status: 400});
+      if (mentionIds.some(id => !room.participants.includes(id))) throw Object.assign(new Error('Người được gắn thẻ không thuộc nhóm này'), {status: 403});
 
       let normalizedPoll;
       if (type === 'poll') {
@@ -69,6 +77,7 @@ export const saveMessage = async ({ roomId, userId, content, type = 'text', file
         userId,
         content,
         type,
+        mentions: mentionIds,
         replyTo,
         forwardedFrom,
         ...(clientMessageId ? {clientMessageId} : {}),

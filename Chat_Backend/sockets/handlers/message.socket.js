@@ -12,7 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Gửi tin nhắn đến phòng
-async function handleSendMessageTo(socket, io, { roomId, message, type = "text", fileMeta, location, poll, replyToId, clientMessageId, hiddenChatAccessToken }, callback) {
+async function handleSendMessageTo(socket, io, { roomId, message, type = "text", fileMeta, location, poll, mentions, replyToId, clientMessageId, hiddenChatAccessToken }, callback) {
   try {
     const context = socket.context;
     if (!context?.userId) {
@@ -39,6 +39,7 @@ async function handleSendMessageTo(socket, io, { roomId, message, type = "text",
           createdAt: existing.timestamp,
           fileMeta: existing.fileMeta || null,
           location: existing.location || null,
+          mentions: existing.mentions || [],
           replyTo: existing.replyTo || null,
           clientMessageId: idempotencyKey,
           lastMessage: {content: existing.content, type: existing.type, createdAt: existing.timestamp},
@@ -53,6 +54,7 @@ async function handleSendMessageTo(socket, io, { roomId, message, type = "text",
       content: sanitizeMessageContent(message),
       type,
       ...(type === 'poll' ? {poll} : {}),
+      mentions,
       replyTo: await createReplyPreview(roomId, replyToId),
       ...(idempotencyKey ? {clientMessageId: idempotencyKey} : {}),
     };
@@ -105,6 +107,7 @@ async function handleSendMessageTo(socket, io, { roomId, message, type = "text",
         fileMeta: savedMessage.fileMeta || null,
         location: savedMessage.location || null,
         poll: savedMessage.poll || null,
+        mentions: savedMessage.mentions || [],
         replyTo: savedMessage.replyTo || null,
         clientMessageId: savedMessage.clientMessageId || undefined,
         lastMessage: {

@@ -122,6 +122,28 @@ a{display:block;margin-top:22px;padding:14px;border-radius:13px;background:#087b
 </style></head><body><main><div class="mark">M</div><h1>Lời mời kết bạn</h1><p>Tìm tài khoản MobileChat</p><p class="account">${safeUsername}</p><a href="${deepLink}">Mở trong MobileChat</a><p>Bạn vẫn cần xác nhận lời mời trong ứng dụng.</p></main></body></html>`);
 });
 
+app.get('/invite/group/:token', (req, res) => {
+  const token = typeof req.params.token === 'string' ? req.params.token.trim() : '';
+  if (!/^[A-Za-z0-9_-]{32,120}$/.test(token)) {
+    return res.status(400).type('text/plain').send('Invalid MobileChat group invite');
+  }
+  const deepLink = `mobilechat://group/${encodeURIComponent(token)}`;
+  res.set({
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'X-Content-Type-Options': 'nosniff',
+  });
+  return res.type('html').send(`<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lời mời vào nhóm MobileChat</title><style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#f2f6fb;color:#1b2a3a;font:16px system-ui,sans-serif}
+main{width:min(100%,420px);padding:30px 24px;border-radius:22px;background:#fff;text-align:center;box-shadow:0 12px 36px #20344a20}
+.mark{margin:0 auto 18px;width:56px;height:56px;border-radius:18px;display:grid;place-items:center;background:#e8f3ff;color:#087bfa;font-size:28px;font-weight:800}
+h1{margin:0;font-size:22px}p{color:#6e7d8c;line-height:1.5}
+a{display:block;margin-top:22px;padding:14px;border-radius:13px;background:#087bfa;color:white;text-decoration:none;font-weight:700}
+</style></head><body><main><div class="mark">M</div><h1>Bạn được mời vào nhóm</h1><p>Mở lời mời trong MobileChat để tham gia cuộc trò chuyện.</p><a href="${deepLink}">Mở trong MobileChat</a></main></body></html>`);
+});
+
 // Routes
 app.use('/api', apiRoutes);
 

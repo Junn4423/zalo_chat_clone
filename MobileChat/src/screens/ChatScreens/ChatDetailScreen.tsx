@@ -1,5 +1,5 @@
 import React, { useCallback, useLayoutEffect, useState, useEffect, useRef } from "react";
-import { View, Text, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, Modal, Image, Linking, PermissionsAndroid, Alert, ActivityIndicator, NativeModules, Share, Dimensions, AppState } from "react-native";
+import { View, Text, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, Modal, Image, Linking, PermissionsAndroid, Alert, ActivityIndicator, NativeModules, Share, Dimensions, AppState, StyleSheet } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import {errorCodes as documentPickerErrorCodes, isErrorWithCode as isDocumentPickerError, pick as pickDocument, types as documentTypes} from '@react-native-documents/picker';
 import Icon from "react-native-vector-icons/FontAwesome";
@@ -9,8 +9,8 @@ import { sendMessage, retryQueuedMessage, onReceiveMessage, getFileType, uploadF
 import { useAuthStore } from "../../auth/store/login.store";
 import { useUnreadStore } from "../../store/unreadStore";
 import {TypingPresenceTimers} from '../../utils/typingPresence';
-import { LayLichSuTinNhan, LayTatCaPhongChat, editChatMessage, deleteChatMessage, toggleChatMessageReaction, forwardChatMessage, updateLiveLocation, stopLiveLocation, getGroupPins, pinGroupMessage, unpinGroupMessage, getMessageContext, getGroupPoll, voteGroupPoll, addGroupPollOption, closeGroupPoll } from "../../services/ChatAPI/api";
-import type {GroupPoll} from "../../services/ChatAPI/api";
+import { LayLichSuTinNhan, LayTatCaPhongChat, editChatMessage, deleteChatMessage, toggleChatMessageReaction, forwardChatMessage, updateLiveLocation, stopLiveLocation, getGroupPins, pinGroupMessage, unpinGroupMessage, getMessageContext, getGroupPoll, voteGroupPoll, addGroupPollOption, closeGroupPoll, getGroupMembers } from "../../services/ChatAPI/api";
+import type {GroupMember, GroupPoll} from "../../services/ChatAPI/api";
 import { styles } from './css/ChatDetailScreen.style';
 import Video from 'react-native-video';
 import Sound from 'react-native-sound';
@@ -54,16 +54,19 @@ const GIF_PACK = [
   {id: 'celebrate', label: 'Ăn mừng', source: require('../../assets/gifs/celebrate.gif')},
 ];
 
-function LinkedMessageText({content, style}: {content: string; style: any}) {
-  const parts = content.split(/(https?:\/\/[^\s<>]+)/gi);
+function LinkedMessageText({content, style, mentions = []}: {content: string; style: any; mentions?: string[]}) {
+  const mentionedUsers = new Set(mentions);
+  const parts = content.split(/(https?:\/\/[^\s<>]+|@[A-Za-z0-9_.-]+)/gi);
   return <Text style={style}>{parts.map((part, index) => {
-    if (!/^https?:\/\//i.test(part)) return part;
-    const match = part.match(/^(.*?)([.,!?;:)]*)$/);
-    const url = match?.[1] || part;
-    return <Text key={index} style={{textDecorationLine: 'underline'}} onPress={() => { void Linking.openURL(url).catch(() => Alert.alert('Không mở được liên kết', 'Vui lòng thử lại.')); }}>{url}{match?.[2] || ''}</Text>;
+    if (/^https?:\/\//i.test(part)) {
+      const match = part.match(/^(.*?)([.,!?;:)]*)$/);
+      const url = match?.[1] || part;
+      return <Text key={index} style={{textDecorationLine: 'underline'}} onPress={() => { void Linking.openURL(url).catch(() => Alert.alert('Không mở được liên kết', 'Vui lòng thử lại.')); }}>{url}{match?.[2] || ''}</Text>;
+    }
+    if (part.startsWith('@') && mentionedUsers.has(part.slice(1))) return <Text key={index} style={{color: '#087bfa', fontWeight: '700'}}>{part}</Text>;
+    return part;
   })}</Text>;
 }
-
 function firstHttpUrl(content: string) {
   const candidate = content.match(/https?:\/\/[^\s<>]+/i)?.[0];
   return candidate?.replace(/[.,!?;:)\]]+$/, '') || null;
@@ -193,6 +196,10 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imageUrls, setImageUrls] = useState<Array<{ uri: string }>>([]);
   const scrollRef = useRef<ScrollView>(null);
+  const messageLayoutsRef = useRef<Record<string, number>>({});
+  const pendingJumpMessageIdRef = useRef<string | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const { chatId } = route.params;
   const hiddenChatAccessToken = route.params?.hiddenChatAccessToken;
@@ -222,6 +229,9 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
   const [loadingForwardRooms, setLoadingForwardRooms] = useState(false);
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [mentionQuery, setMentionQuery] = useState<{start: number; query: string} | null>(null);
+  const composerInputRef = useRef<TextInput | null>(null);
   const [liveShareSession, setLiveShareSession] = useState<{sessionId: string; expiresAt: string} | null>(null);
   const [outboxMessages, setOutboxMessages] = useState<OutboxMessage[]>([]);
   const [outboxClock, setOutboxClock] = useState(Date.now());
@@ -277,6 +287,29 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
   const audioPlayerRef = useRef<Sound | null>(null);
   const audioProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  useEffect(() => {
+    if (!isGroupChat) {
+      setGroupMembers([]);
+      return;
+    }
+    let active = true;
+    void getGroupMembers(String(chatId)).then(result => {
+      if (active) setGroupMembers(result.members || []);
+    }).catch(() => {
+      if (active) setGroupMembers([]);
+    });
+    return () => { active = false; };
+  }, [chatId, isGroupChat]);
+
+  useEffect(() => {
+    messageLayoutsRef.current = {};
+    pendingJumpMessageIdRef.current = null;
+    setHighlightedMessageId(null);
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, [chatId]);
+
   const loadGroupPins = useCallback(async (showError = false) => {
     if (!isGroupChat || !chatId) {
       setGroupPins([]);
@@ -306,6 +339,12 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
 
   const handleComposerChange = useCallback((text: string) => {
     setMessage(text);
+    const match = text.match(/(?:^|\s)@([^\s@]*)$/);
+    if (isGroupChat && !editTarget && match) {
+      setMentionQuery({start: text.length - match[1].length - 1, query: match[1]});
+    } else {
+      setMentionQuery(null);
+    }
     if (!text.trim() || !socket?.connected) {
       stopLocalTyping();
       return;
@@ -316,7 +355,15 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
     }
     if (localTypingTimerRef.current) clearTimeout(localTypingTimerRef.current);
     localTypingTimerRef.current = setTimeout(stopLocalTyping, 1400);
-  }, [chatId, stopLocalTyping]);
+  }, [chatId, editTarget, isGroupChat, stopLocalTyping]);
+
+  const insertMention = (username: string) => {
+    if (!mentionQuery) return;
+    const next = `${message.slice(0, mentionQuery.start)}@${username} `;
+    setMessage(next);
+    setMentionQuery(null);
+    composerInputRef.current?.focus();
+  };
 
   useEffect(() => {
     const accountId = String(auth?.user?.username || '');
@@ -616,6 +663,7 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
     editedAt: msg.editedAt ?? null,
     deletedAt: msg.deletedAt ?? null,
     deletedBy: msg.deletedBy ?? null,
+    mentions: Array.isArray(msg.mentions) ? msg.mentions : [],
     createdAt: msg.createdAt ?? msg.timestamp ?? new Date().toISOString(),
     isMine: Boolean(auth?.user?.username && (msg.userId ?? msg.from) === auth.user.username),
   })), [auth, chatId]);
@@ -1075,8 +1123,11 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
     try {
       if (textToSend) {
         try {
-          await sendMessage(chatId, textToSend, 'text', undefined, replyToId);
+          const typedMentionUsernames = new Set(Array.from(textToSend.matchAll(/(?:^|\s)@([A-Za-z0-9_.-]+)/g), match => match[1]));
+          const mentionUserIds = isGroupChat ? groupMembers.filter(member => typedMentionUsernames.has(member.username)).map(member => member.username) : [];
+          await sendMessage(chatId, textToSend, 'text', undefined, replyToId, undefined, undefined, mentionUserIds);
           setMessage('');
+          setMentionQuery(null);
         } catch (error: any) {
           completed = false;
           Alert.alert('Không gửi được tin nhắn', error?.message || 'Vui lòng thử lại.');
@@ -1451,18 +1502,33 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
 
   const openPinnedMessage = async (pinned: any) => {
     if (!pinned?._id) return;
+    const messageId = String(pinned._id);
     try {
-      const result = await getMessageContext(String(chatId), String(pinned._id));
+      const result = await getMessageContext(String(chatId), messageId);
       const contextMessages = mapHistoryMessages(Array.isArray(result.messages) ? result.messages : []);
       if (contextMessages.length) {
-        shouldScrollToEndRef.current = true;
+        pendingJumpMessageIdRef.current = messageId;
         setMessages(previous => mergeMessages(previous, contextMessages));
       }
       setGroupBoardVisible(false);
+      requestAnimationFrame(() => requestAnimationFrame(() => scrollToMessage(messageId)));
     } catch (error: any) {
       Alert.alert('Không mở được tin đã ghim', error?.response?.data?.error || error?.message || 'Tin nhắn có thể đã bị xóa.');
       void loadGroupPins();
     }
+  };
+
+  const scrollToMessage = (messageId: string) => {
+    const offset = messageLayoutsRef.current[messageId];
+    if (offset === undefined) {
+      pendingJumpMessageIdRef.current = messageId;
+      return;
+    }
+    pendingJumpMessageIdRef.current = null;
+    scrollRef.current?.scrollTo({y: Math.max(0, offset - 76), animated: true});
+    setHighlightedMessageId(messageId);
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => setHighlightedMessageId(null), 2200);
   };
 
   const editSelectedMessage = () => {
@@ -1643,6 +1709,7 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
       from: item.accountId,
       to: item.roomId,
       content: item.content,
+      mentions: item.mentions || [],
       type: item.type,
       createdAt: item.createdAt,
       isMine: true,
@@ -1759,7 +1826,15 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
           return (
             <React.Fragment key={msg._id ? String(msg._id) : `${msg.createdAt}-${idx}`}>
             {showDate && <Text style={{alignSelf: 'center', overflow: 'hidden', backgroundColor: '#dce5ed', color: '#667685', borderRadius: 12, paddingVertical: 4, paddingHorizontal: 12, marginVertical: 10, fontSize: 12}}>{date.toLocaleDateString('vi-VN', {weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'})}</Text>}
-            <View style={containerStyle}>
+            <View
+              style={[containerStyle, highlightedMessageId === String(msg._id || '') && {paddingVertical: 6, borderRadius: 14, backgroundColor: '#fff2c6'}]}
+              onLayout={event => {
+                const messageId = String(msg._id || '');
+                if (!messageId) return;
+                messageLayoutsRef.current[messageId] = event.nativeEvent.layout.y;
+                if (pendingJumpMessageIdRef.current === messageId) requestAnimationFrame(() => scrollToMessage(messageId));
+              }}
+            >
               {!msg.isMine && (
                 <Text style={styles.senderName}>{msg.from}</Text>
               )}
@@ -1775,7 +1850,7 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
                 {isRevoked ? (
                   <Text style={styles.revokedMessage}>Tin nhắn đã được thu hồi</Text>
                 ) : msg.content && (!isImage && !isVideo && !isAudio && !isFile && !isCall && !isSticker && !isLocation && !isGif && !isPoll) ? (
-                  <LinkedMessageText content={String(msg.content)} style={msg.isMine ? styles.messageTextMine : styles.messageTextOther} />
+                  <LinkedMessageText content={String(msg.content)} mentions={msg.mentions} style={msg.isMine ? styles.messageTextMine : styles.messageTextOther} />
                 ) : null}
                 {richLinkUrl && <RichLinkPreviewCard url={richLinkUrl} />}
                 {poll && <View style={styles.groupPollCard}>
@@ -2044,6 +2119,13 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
             ? typingUsers.length > 1 ? `${typingUsers.length} thành viên đang nhập…` : 'Một thành viên đang nhập…'
             : `${route.params?.chatName || 'Đối phương'} đang nhập…`}</Text>
         </View>}
+        {mentionQuery && groupMembers.some(member => `${member.name} ${member.username}`.toLocaleLowerCase().includes(mentionQuery.query.toLocaleLowerCase())) && <View style={{marginHorizontal: 12, marginBottom: 8, maxHeight: 190, backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#e4eaf1', overflow: 'hidden', elevation: 5}}>
+          {groupMembers.filter(member => `${member.name} ${member.username}`.toLocaleLowerCase().includes(mentionQuery.query.toLocaleLowerCase())).slice(0, 6).map(member => <TouchableOpacity key={member.username} accessibilityRole="button" accessibilityLabel={`Gắn thẻ ${member.name || member.username}`} onPress={() => insertMention(member.username)} style={{minHeight: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e8edf2'}}>
+            <View style={{width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#edf5ff', marginRight: 10}}><Icon name="user" size={15} color="#2179ee" /></View>
+            <View style={{flex: 1}}><Text numberOfLines={1} style={{fontSize: 14, fontWeight: '600', color: '#273444'}}>{member.name || member.username}</Text><Text style={{fontSize: 12, color: '#8793a0', marginTop: 2}}>@{member.username}</Text></View>
+            <Icon name="at" size={17} color="#9aa8b6" />
+          </TouchableOpacity>)}
+        </View>}
         <View style={styles.inputRow}>
           <TouchableOpacity accessibilityLabel="Biểu tượng cảm xúc" style={styles.iconButton} disabled={sending || isVoiceRecording} onPress={() => setEmojiPickerVisible(true)}>
             <Icon name="smile-o" size={25} color="#2179ee" />
@@ -2064,6 +2146,7 @@ export default function ChatDetailScreen({ route, navigation }: { route: any, na
             </View>
           ) : (
             <TextInput
+              ref={composerInputRef}
               style={styles.textInput}
               placeholder="Nhập tin nhắn..."
               placeholderTextColor="#888"

@@ -3,7 +3,19 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 def keystorePropertiesFile = rootProject.file("keystore.properties")
 def keystoreProperties = new Properties()
-keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+def releaseSigningKeys = [
+    'MYAPP_RELEASE_STORE_FILE',
+    'MYAPP_RELEASE_STORE_PASSWORD',
+    'MYAPP_RELEASE_KEY_ALIAS',
+    'MYAPP_RELEASE_KEY_PASSWORD',
+]
+def hasReleaseSigning = releaseSigningKeys.every { keystoreProperties.getProperty(it)?.trim() }
+if (keystorePropertiesFile.exists() && !hasReleaseSigning) {
+    throw new GradleException('android/keystore.properties is missing one or more release signing values.')
+}
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -84,8 +96,8 @@ android {
         applicationId "com.mobilechat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 53
-        versionName "1.9.43"
+        versionCode 54
+        versionName "1.9.44"
     }
     // signingConfigs {
     //     debug {
@@ -95,7 +107,7 @@ android {
     //         keyPassword 'android'
     //     }
     // }
-    signingConfigs {
+    if (hasReleaseSigning) signingConfigs {
         release {
             storeFile file(keystoreProperties['MYAPP_RELEASE_STORE_FILE'])
             storePassword keystoreProperties['MYAPP_RELEASE_STORE_PASSWORD']
@@ -117,7 +129,8 @@ android {
     // }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (hasReleaseSigning) signingConfig signingConfigs.release
+            else signingConfig signingConfigs.debug
             minifyEnabled false
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

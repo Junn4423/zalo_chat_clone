@@ -3,7 +3,9 @@ import Room from '../models/Room.js';
 import User from '../models/User.js';
 import Friendship from '../models/Friendship.js';
 import ChatPreference from '../models/ChatPreference.js';
+import GroupInvite from '../models/GroupInvite.js';
 import mongoose from 'mongoose';
+import {createHash, randomBytes} from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -11,6 +13,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const friendshipPairKey = (a, b) => JSON.stringify([String(a), String(b)].sort());
+const hashGroupInviteToken = token => createHash('sha256').update(token).digest('hex');
 
 export const validateGroupParticipantIds = ({memberIds, createdBy, acceptedPairKeys}) => {
   const creatorId = typeof createdBy === 'string' ? createdBy.trim() : '';
@@ -185,6 +188,50 @@ export const addGroupMembersService = async ({roomId, userId, userIds, io}) => {
   }
   for (const id of addIds) io?.to(id).emit('groupCreated', room.toObject());
   return {room: room.toObject(), added: addIds};
+};
+
+export const createGroupInviteService = async ({roomId, userId}) => {
+  if (!mongoose.Types.ObjectId.isValid(roomId)) throw Object.assign(new Error('Phòng chat không hợp lệ'), {status: 400});
+  const room = await Room.findOne({_id: roomId, type: 'group', participants: userId, deletedAt: null}).select('_id name').lean();
+  if (!room) throw Object.assign(new Error('Không tìm thấy nhóm hoặc bạn không phải thành viên'), {status: 404});
+
+  const token = randomBytes(32).toString('base64url');
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  await GroupInvite.updateMany({roomId: room._id, revokedAt: null}, {$set: {revokedAt: now}});
+  await GroupInvite.create({roomId: room._id, tokenHash: hashGroupInviteToken(token), createdBy: String(userId), expiresAt});
+  return {roomId: String(room._id), name: room.name, token, expiresAt};
+};
+
+export const joinGroupByInviteService = async ({token, userId, io}) => {
+  const normalizedToken = typeof token === 'string' ? token.trim() : '';
+  const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+  if (!/^[A-Za-z0-9_-]{32,120}$/.test(normalizedToken) || !normalizedUserId) {
+    throw Object.assign(new Error('Liên kết mời không hợp lệ'), {status: 400});
+  }
+  const invite = await GroupInvite.findOne({tokenHash: hashGroupInviteToken(normalizedToken), revokedAt: null}).lean();
+  if (!invite) throw Object.assign(new Error('Liên kết mời không hợp lệ hoặc đã bị thu hồi'), {status: 404});
+  if (new Date(invite.expiresAt).getTime() <= Date.now()) throw Object.assign(new Error('Liên kết mời đã hết hạn'), {status: 410});
+
+  const [room, user] = await Promise.all([
+    Room.findOne({_id: invite.roomId, type: 'group', deletedAt: null}),
+    User.findOne({lv001: normalizedUserId}).select('lv001').lean(),
+  ]);
+  if (!room || !user) throw Object.assign(new Error('Không tìm thấy nhóm hoặc tài khoản'), {status: 404});
+  const alreadyMember = room.participants.some(id => String(id) === normalizedUserId);
+  if (!alreadyMember) {
+    room.participants.push(normalizedUserId);
+    await room.save();
+    const payload = {roomId: String(room._id), participants: room.participants.map(String), added: [normalizedUserId]};
+    io?.to(String(room._id)).emit('groupMembersUpdated', payload);
+    for (const socket of io?.sockets?.sockets?.values?.() || []) {
+      if (String(socket.userId || '') !== normalizedUserId) continue;
+      const hidden = await ChatPreference.exists({userId: normalizedUserId, roomId: room._id, hidden: true});
+      if (!hidden) socket.join(String(room._id));
+    }
+    io?.to(normalizedUserId).emit('groupCreated', room.toObject());
+  }
+  return {roomId: String(room._id), name: room.name, groupImage: room.groupImage || null, type: room.type, joined: !alreadyMember};
 };
 
 export const removeGroupMemberService = async ({roomId, userId, memberId, io}) => {

@@ -5,9 +5,10 @@ import { useFocusEffect } from "@react-navigation/native";
 import PushNotification from "react-native-push-notification";
 import { styles } from "./css/ChatListScreen.style";
 import SearchHeader from "../../components/SearchHeader";
+import QrScannerModal from "../../components/QrScannerModal";
 import { layTatCaNhanVien } from "../../services/UserAPI/api";
 import { User } from "../../types/User";
-import { LayTaoPhongChat, getLastMessageOfRoom, LayTatCaPhongChat, setRoomPin, setRoomMute, getHiddenRoomIds } from "../../services/ChatAPI/api";
+import { LayTaoPhongChat, getLastMessageOfRoom, LayTatCaPhongChat, setRoomPin, setRoomMute, getHiddenRoomIds, joinGroupByInvite } from "../../services/ChatAPI/api";
 import { useAuthStore } from "../../auth/store/login.store";
 import { useUnreadStore } from "../../store/unreadStore";
 import { 
@@ -27,6 +28,7 @@ import constants from "../../contents/Api_URL";
 import {ConversationSnapshot, loadConversationSnapshot, saveConversationSnapshot} from "../../services/ChatAPI/offlineCache";
 import {getVisibleCachedRoomIds} from "../../utils/chatRoomSync";
 import {getNotificationPreferences, subscribeNotificationPreferences} from "../../services/notificationPreferences";
+import {parseInviteLink} from "../../utils/friendInvite";
 
 const hasRealMessage = (message: any) => Boolean(message && (message._id || message.timestamp || message.createdAt || message.content || message.fileMeta?.fileUrl));
 
@@ -92,8 +94,29 @@ export default function ChatListScreen({ navigation }: { navigation: any }) {
   const [pendingOnlineEvents, setPendingOnlineEvents] = useState<string[]>([]);
   const [snapshotOwner, setSnapshotOwner] = useState<string | null>(null);
   const [hiddenRoomIds, setHiddenRoomIds] = useState<string[]>([]);
+  const [qrScannerVisible, setQrScannerVisible] = useState(false);
   const auth = useAuthStore(state => state.auth);
   const { unreadCounts, setUnreadCount, resetUnreadCount } = useUnreadStore();
+
+  const handleInviteScan = async (value: string) => {
+    setQrScannerVisible(false);
+    const invite = parseInviteLink(value);
+    if (!invite) {
+      Alert.alert('Mã QR không hợp lệ', 'Hãy quét mã kết bạn hoặc mã mời nhóm MobileChat.');
+      return;
+    }
+    if (invite.type === 'friend') {
+      navigation.navigate('Directory', {openTab: 'discover', searchUsername: invite.username});
+      return;
+    }
+    try {
+      const room = await joinGroupByInvite(invite.token);
+      void handleRefresh();
+      navigation.navigate('ChatDetail', {chatId: room.roomId, chatType: 'group', chatName: room.name});
+    } catch (error: any) {
+      Alert.alert('Không vào được nhóm', error?.response?.data?.error || error?.message || 'Liên kết mời có thể đã hết hạn.');
+    }
+  };
   
   // Sử dụng ref để lưu trữ giá trị hiện tại cho việc so sánh trong socket handler
   const currentUsersRef = useRef<User[]>([]);
@@ -1226,7 +1249,7 @@ export default function ChatListScreen({ navigation }: { navigation: any }) {
         searchValue={searchValue}
         setSearchValue={setSearchValue}
         onRightPress={(key) => {
-          if (key === "qrcode") { /* xử lý quét QR */ }
+          if (key === "qrcode") { setQrScannerVisible(true); }
           else if (key === "addFriend") {
             navigation.navigate("Directory", {openTab: "discover"});
           }
@@ -1578,6 +1601,7 @@ export default function ChatListScreen({ navigation }: { navigation: any }) {
             : <Text style={{textAlign: 'center', margin: 10}}>Không có dữ liệu</Text>
         }
       />
+      <QrScannerModal visible={qrScannerVisible} onClose={() => setQrScannerVisible(false)} onScan={value => { void handleInviteScan(value); }} />
     </View>
   );
 }

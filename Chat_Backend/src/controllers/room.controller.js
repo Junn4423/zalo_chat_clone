@@ -1,4 +1,4 @@
-import { getOrCreateOneToOneRoomService, createGroupService, getMyRoomsService, getMyGroupsService, getAllRoomsService, deleteRoomService, getGroupMembersService, addGroupMembersService, removeGroupMemberService, renameGroupService, setGroupImageService, setGroupAdminService, transferGroupOwnershipService, leaveGroupService, getRoomPreferenceService, setRoomMuteService, setRoomPinService, setRoomHiddenService, getMyHiddenRoomIdsService } from '../../services/room.service.js';
+import { getOrCreateOneToOneRoomService, createGroupService, createGroupInviteService, joinGroupByInviteService, getMyRoomsService, getMyGroupsService, getAllRoomsService, deleteRoomService, getGroupMembersService, addGroupMembersService, removeGroupMemberService, renameGroupService, setGroupImageService, setGroupAdminService, transferGroupOwnershipService, leaveGroupService, getRoomPreferenceService, setRoomMuteService, setRoomPinService, setRoomHiddenService, getMyHiddenRoomIdsService } from '../../services/room.service.js';
 import ChatPreference from '../../models/ChatPreference.js';
 
 // Tạo hoặc lấy phòng 1-1
@@ -49,6 +49,22 @@ export const createGroup = async (req, res) => {
         res.status(201).json(room);
     } catch (error) {
         res.status(error.status || 500).json({ error: `Lỗi tạo phòng nhóm: ${error.message}` });
+    }
+};
+
+export const createGroupInvite = async (req, res) => {
+    try {
+        res.status(201).json(await createGroupInviteService({roomId: req.params.roomId, userId: req.userId}));
+    } catch (error) {
+        res.status(error.status || 500).json({error: error.message});
+    }
+};
+
+export const joinGroupByInvite = async (req, res) => {
+    try {
+        res.json(await joinGroupByInviteService({token: req.body?.token, userId: req.userId, io: req.app.get('io')}));
+    } catch (error) {
+        res.status(error.status || 500).json({error: error.message});
     }
 };
 

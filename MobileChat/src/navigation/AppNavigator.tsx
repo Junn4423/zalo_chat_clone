@@ -1,19 +1,34 @@
-import React, {useEffect, useState} from 'react';
-import {ActivityIndicator, Linking, View} from 'react-native';
+import React, {useCallback, useEffect, useState} from 'react';
+import {ActivityIndicator, Alert, Linking, View} from 'react-native';
 import {createNavigationContainerRef, NavigationContainer} from '@react-navigation/native';
 import AuthStack from './AuthStack';
 import MainTabs from './MainTabs';
 import {getToken, removeToken} from '../auth/utils/storage';
 import {useAuthStore} from '../auth/store/login.store';
-import {parseFriendInviteLink} from '../utils/friendInvite';
+import {InviteTarget, parseInviteLink} from '../utils/friendInvite';
+import {joinGroupByInvite} from '../services/ChatAPI/api';
 
 const navigationRef = createNavigationContainerRef<any>();
 
 export default function AppNavigator() {
   const [sessionReady, setSessionReady] = useState(false);
   const [navigationReady, setNavigationReady] = useState(false);
-  const [pendingInvite, setPendingInvite] = useState<string | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<InviteTarget | null>(null);
   const auth = useAuthStore(state => state.auth);
+
+  const openInvite = useCallback(async (invite: InviteTarget) => {
+    if (!navigationRef.isReady()) return;
+    if (invite.type === 'friend') {
+      navigationRef.navigate('Directory', {openTab: 'discover', searchUsername: invite.username});
+      return;
+    }
+    try {
+      const room = await joinGroupByInvite(invite.token);
+      navigationRef.navigate('ChatList', {screen: 'ChatDetail', params: {chatId: room.roomId, chatType: 'group', chatName: room.name}});
+    } catch (error: any) {
+      Alert.alert('Không vào được nhóm', error?.response?.data?.error || error?.message || 'Liên kết mời có thể đã hết hạn.');
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -54,24 +69,24 @@ export default function AppNavigator() {
 
   useEffect(() => {
     const handleInvite = (url?: string | null) => {
-      const username = parseFriendInviteLink(url);
-      if (!username) return;
+      const invite = parseInviteLink(url);
+      if (!invite) return;
       if (navigationReady && useAuthStore.getState().auth?.token) {
-        navigationRef.navigate('Directory', {openTab: 'discover', searchUsername: username});
+        void openInvite(invite);
       } else {
-        setPendingInvite(username);
+        setPendingInvite(invite);
       }
     };
     const subscription = Linking.addEventListener('url', event => handleInvite(event.url));
     void Linking.getInitialURL().then(handleInvite).catch(() => undefined);
     return () => subscription.remove();
-  }, [navigationReady]);
+  }, [navigationReady, openInvite]);
 
   useEffect(() => {
     if (!sessionReady || !navigationReady || !auth?.token || !pendingInvite) return;
-    navigationRef.navigate('Directory', {openTab: 'discover', searchUsername: pendingInvite});
+    void openInvite(pendingInvite);
     setPendingInvite(null);
-  }, [auth?.token, navigationReady, pendingInvite, sessionReady]);
+  }, [auth?.token, navigationReady, openInvite, pendingInvite, sessionReady]);
 
   return (
     <NavigationContainer ref={navigationRef} onReady={() => setNavigationReady(true)}>

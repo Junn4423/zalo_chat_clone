@@ -10,6 +10,7 @@ export type OutboxMessage = {
   type: 'text' | 'sticker' | 'gif';
   content: string;
   replyToId?: string;
+  mentions?: string[];
   createdAt: string;
   lastAttemptAt?: string;
 };

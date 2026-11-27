@@ -88,6 +88,7 @@ async function flushOutbox() {
           message: item.content,
           type: item.type,
           replyToId: item.replyToId,
+          mentions: item.mentions,
           clientMessageId: item.id,
           hiddenChatAccessToken: getHiddenChatAccessToken() || undefined,
         }, (error: Error | null, result: any) => resolve({error, result}));
@@ -216,12 +217,12 @@ export async function joinChatRooms(roomIds: string[]): Promise<string[]> {
   return joined;
 }
 
-export function sendMessage(roomId: string, message: string, type: string = "text", fileMeta?: any, replyToId?: string, location?: {latitude: number; longitude: number; accuracy?: number; liveSessionId?: string; isLive?: boolean; expiresAt?: string}, poll?: any) {
+export function sendMessage(roomId: string, message: string, type: string = "text", fileMeta?: any, replyToId?: string, location?: {latitude: number; longitude: number; accuracy?: number; liveSessionId?: string; isLive?: boolean; expiresAt?: string}, poll?: any, mentions?: string[]) {
   if ((type === 'text' || type === 'sticker' || type === 'gif') && !fileMeta) {
     if (!outboxAccountId) return Promise.reject(new Error('Chưa xác định tài khoản gửi tin nhắn.'));
     let item: OutboxMessage;
     try {
-      item = enqueueOutboxMessage({accountId: outboxAccountId, roomId, content: message, type, replyToId});
+      item = enqueueOutboxMessage({accountId: outboxAccountId, roomId, content: message, type, replyToId, mentions});
     } catch (error: any) {
       return Promise.reject(new Error(error?.message || 'Không lưu được tin nhắn chờ gửi.'));
     }
@@ -237,7 +238,7 @@ export function sendMessage(roomId: string, message: string, type: string = "tex
   }
   const activeSocket = socket;
   return new Promise<{messageId: string}>((resolve, reject) => {
-    activeSocket.timeout(15000).emit("sendMessageTo", {roomId, message, type, fileMeta, replyToId, location, poll, hiddenChatAccessToken: getHiddenChatAccessToken() || undefined}, (error: Error | null, result: any) => {
+    activeSocket.timeout(15000).emit("sendMessageTo", {roomId, message, type, fileMeta, replyToId, location, poll, mentions, hiddenChatAccessToken: getHiddenChatAccessToken() || undefined}, (error: Error | null, result: any) => {
       if (error) reject(new Error('Chưa nhận được xác nhận. Hãy kiểm tra cuộc trò chuyện trước khi gửi lại.'));
       else if (!result?.success) reject(new Error(result?.error || 'Không gửi được tin nhắn.'));
       else resolve(result);

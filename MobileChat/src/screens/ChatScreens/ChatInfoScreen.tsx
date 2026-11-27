@@ -7,9 +7,10 @@ import {launchImageLibrary} from 'react-native-image-picker';
 import {MainTabsParamList} from '../../types/navigation';
 import {useAuthStore} from '../../auth/store/login.store';
 import {FriendEntry, listFriends} from '../../services/FriendsAPI/api';
-import {addGroupMembers, getGroupMembers, GroupMembersResponse, removeGroupMember, getRoomPreference, setRoomMute, setRoomHidden, getHiddenChatPinStatus, renameGroup, setGroupImage, setGroupAdmin, transferGroupOwnership, leaveGroup, deleteRoom, ChatPreference} from '../../services/ChatAPI/api';
+import {addGroupMembers, getGroupMembers, GroupMembersResponse, removeGroupMember, getRoomPreference, setRoomMute, setRoomHidden, getHiddenChatPinStatus, renameGroup, setGroupImage, setGroupAdmin, transferGroupOwnership, leaveGroup, deleteRoom, ChatPreference, createGroupInvite} from '../../services/ChatAPI/api';
 import {socket} from '../../utils/socket';
 import constants from '../../contents/Api_URL';
+import GroupInviteModal from '../../components/GroupInviteModal';
 
 type Props = StackScreenProps<MainTabsParamList, 'ChatInfo'>;
 
@@ -37,6 +38,8 @@ export default function ChatInfoScreen({navigation, route}: Props) {
   const [ownerLeaveModalVisible, setOwnerLeaveModalVisible] = useState(false);
   const [selectedSuccessorId, setSelectedSuccessorId] = useState('');
   const [groupNameDraft, setGroupNameDraft] = useState('');
+  const [groupInviteLink, setGroupInviteLink] = useState('');
+  const [groupInviteVisible, setGroupInviteVisible] = useState(false);
 
   const loadGroupData = useCallback(async () => {
     setLoading(true);
@@ -271,6 +274,20 @@ export default function ChatInfoScreen({navigation, route}: Props) {
 
   const openMuteOptions = () => setMuteModalVisible(true);
 
+  const openGroupInvite = async () => {
+    if (!isGroup || saving) return;
+    setSaving(true);
+    try {
+      const invite = await createGroupInvite(route.params.chatId);
+      setGroupInviteLink(invite.link);
+      setGroupInviteVisible(true);
+    } catch (error: any) {
+      Alert.alert('Không tạo được mã mời nhóm', error?.response?.data?.error || error?.message || 'Vui lòng thử lại.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveGroupName = async () => {
     const name = groupNameDraft.trim();
     if (!name || saving) return;
@@ -350,6 +367,11 @@ export default function ChatInfoScreen({navigation, route}: Props) {
         <Icon name="picture-o" size={22} color="#405060" /><Text style={styles.actionText}>Ảnh, file, link</Text>
       </TouchableOpacity>
     </View>
+    {isGroup && <TouchableOpacity accessibilityRole="button" style={styles.preferenceRow} disabled={saving || loading} onPress={() => { void openGroupInvite(); }}>
+      <View style={styles.preferenceIcon}><Icon name="qrcode" size={18} color="#2179ee" /></View>
+      <View style={{flex: 1}}><Text style={styles.memberName}>Mời vào nhóm bằng mã QR</Text><Text style={styles.memberMeta}>Người lạ có liên kết cũng có thể tham gia</Text></View>
+      {saving ? <ActivityIndicator size="small" color="#2179ee" /> : <Icon name="angle-right" size={22} color="#99a3ae" />}
+    </TouchableOpacity>}
     <TouchableOpacity style={styles.preferenceRow} disabled={saving || loading} onPress={openMuteOptions}>
       <View style={styles.preferenceIcon}><Icon name={preference?.isMuted ? 'bell-slash' : 'bell-o'} size={18} color="#2179ee" /></View>
       <View style={{flex: 1}}><Text style={styles.memberName}>{preference?.isMuted ? 'Thông báo đang tắt' : 'Thông báo đang bật'}</Text><Text style={styles.memberMeta}>Điều chỉnh thông báo cho cuộc trò chuyện</Text></View>
@@ -473,6 +495,7 @@ export default function ChatInfoScreen({navigation, route}: Props) {
         </View>
       </View>
     </Modal>
+    <GroupInviteModal visible={groupInviteVisible} groupName={group?.name || route.params.chatName || 'Nhóm'} link={groupInviteLink} onClose={() => setGroupInviteVisible(false)} />
   </View>;
 }
 
